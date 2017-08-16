@@ -7,11 +7,15 @@ import java.io.InputStreamReader;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Map;
+import java.util.function.BiConsumer;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.YamlConfiguration;
+import org.bukkit.util.FileUtil;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.reader.StreamReader;
 
@@ -58,16 +62,29 @@ public class PlotResizer {
 		float ratio = oldsize / newsize;
 		float ratio2D = ratio == 1 ? ratio : ratio > 1 ? ratio * 2 : ratio / 2;
 		float priceratio = 1 / ratio2D;
-		town.set("town_block_size", newsize + "");
+		List<String> conflines = Files.readAllLines(file.toPath());
+		conflines.forEach(
+				s -> s = s.replace("town_block_size: '" + oldsize + "'", "town_block_size: '" + newsize + "'"));
+		// SetValueFunction func = PlotResizer::setValue; - Works with generics
+		SetValueFunction func = (path, parser, isfloat, isprice) -> {
+			double oldval = parser == null ? isfloat ? config.getDouble(path) : config.getInt(path)
+					: (float) parser.apply(config.getString(path));
+			String[] spl = path.split("\\.");
+			String pathend = spl[spl.length - 1];
+			conflines.forEach(s -> s = s.replace(pathend + ": " + (parser != null ? "'" + oldval + "'" : oldval),
+					pathend + ": " + (parser != null ? "'" : "")
+							+ String.format(isfloat ? "%f" : "%d", oldval * (isprice ? priceratio : ratio2D))
+							+ (parser != null ? "'" : "")));
+		};
 		System.out.println("Set block size to " + newsize);
-		town.set("town_block_ratio", Integer.parseInt(town.getString("town_block_ratio")) * ratio2D);
+		func.setValue("town.town_block_ratio", Integer::parseInt, false, false);
 		System.out.println("Set block ratio to " + town.getString("town_block_ratio"));
 		config.set("levels.town_level", Arrays.asList(config.getMapList("levels.town_level").stream().map(map -> {
 			((Map<String, Object>) map).put("townBlockLimit", ((int) map.get("townBlockLimit")) * ratio2D);
-			return map;
+			return map; // TODO: Store values in array, replace in same order
 		}).toArray(Map[]::new)));
 		System.out.println("Set town levels");
-		town.set("max_plots_per_resident", Integer.parseInt(town.getString("max_plots_per_resident")) * ratio2D);
+		town.set("max_plots_per_resident", Integer.parseInt(town.getString("max_plots_per_resident")) * ratio2D); // TODO
 		System.out.println("Set max plots per resident to " + town.getString("max_plots_per_resident"));
 		town.set("min_plot_distance_from_town_plot",
 				Integer.parseInt(town.getString("min_plot_distance_from_town_plot")) * ratio2D);
@@ -96,7 +113,7 @@ public class PlotResizer {
 		config.set("war.economy.townblock_won",
 				Integer.parseInt(config.getString("war.economy.townblock_won")) * priceratio);
 		System.out.println("Set town block won price to " + config.getString("war.economy.townblock_won"));
-		config.save(file); // TODO: Comments get ERASED - Read then replace
+		// TODO: Comments get ERASED - Read then replace
 		System.out.println("Saved Towny configuration");
 		System.out.println();
 		System.out.println("Setting town plots...");
@@ -119,9 +136,6 @@ public class PlotResizer {
 									ff.toPath(), ff.toPath().resolveSibling((x * (int) ratio + i) + "_"
 											+ (y * (int) ratio + j) + "_" + (int) newsize + ".data"),
 									StandardCopyOption.REPLACE_EXISTING);
-					/*
-					 * Files.move(ff.toPath(), new File(ff.getParentFile(), x * (int) ratio + "_" + y * (int) ratio + "_" + (int) newsize + ".data").toPath(), StandardCopyOption.REPLACE_EXISTING);
-					 */
 					ff.delete();
 					C++;
 				}
